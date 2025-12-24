@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Free Mail Forwarding</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      height: 100vh;
+      background-color: #121212;
+      color: #e0e0e0;
+      font-family: monospace;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+    }
+
+    .container {
+      max-width: 600px;
+      padding: 20px;
+      width: 100%;
+    }
+
+    .buttons {
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+      width: 100%;
+    }
+
+    .buttons a,
+    .buttons button {
+      padding: 12px 20px;
+      background-color: #1f1f1f;
+      color: #e0e0e0;
+      border: 1px solid #333;
+      text-decoration: none;
+      border-radius: 6px;
+      transition: background-color 0.2s;
+      font-family: monospace;
+      cursor: pointer;
+    }
+
+    .buttons a:hover,
+    .buttons button:hover {
+      background-color: #2c2c2c;
+    }
+
+    .field {
+      text-align: left;
+      margin-bottom: 12px;
+      width: 100%;
+    }
+
+    .field label {
+      display: block;
+      font-size: 0.9rem;
+      color: #bdbdbd;
+      margin-bottom: 6px;
+    }
+
+    .field input,
+    .field select {
+      width: 100%;
+      padding: 12px;
+      background-color: #1f1f1f;
+      color: #e0e0e0;
+      border: 1px solid #333;
+      border-radius: 6px;
+      outline: none;
+      font-family: monospace;
+    }
+
+    .hint {
+      margin-top: 6px;
+      font-size: 0.85rem;
+      color: #888;
+    }
+
+    .result {
+      margin-top: 18px;
+      padding: 12px;
+      border: 1px solid #333;
+      border-radius: 6px;
+      background: #141414;
+      text-align: left;
+      white-space: pre-wrap;
+      word-break: break-word;
+      display: none;
+    }
+
+    .result.ok { border-color: #2f6b3f; }
+    .result.err { border-color: #6b2f2f; }
+
+    footer {
+      position: absolute;
+      bottom: 15px;
+      font-size: 0.85rem;
+      color: #888;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+	
+	<h1>Free Mail Forwarding</h1>
+    <br>
+	<br>
+
+    <p>This project allows you to set up an email forward from <code style='color: yellow;'>&lt;alias_handle&gt;@&lt;alias_domain&gt;</code> to any email address of your choosing.</p>
+	<br>
+	<br>
+
+    <form id="subscribeForm" method="GET" autocomplete="off">
+      <div class="field">
+        <label for="name">alias handle</label>
+        <input
+          id="name"
+          name="name"
+          type="text"
+          required
+          minlength="1"
+          maxlength="64"
+          pattern="^[a-z0-9](?:[a-z0-9.]{0,62}[a-z0-9])?$"
+          placeholder="extencil"
+          autocapitalize="none"
+          spellcheck="false"
+        >
+        <div class="hint">[a-z0-9.] | 1–64 | sem ponto no início/fim</div>
+      </div>
+
+      <div class="field">
+        <label for="domain">alias domain</label>
+        <select id="domain" name="domain" required></select>
+      </div>
+
+      <div class="field">
+        <label for="to">to (destination)</label>
+        <input
+          id="to"
+          name="to"
+          type="email"
+          required
+          maxlength="254"
+          placeholder="extencil@proton.me"
+          autocapitalize="none"
+          spellcheck="false"
+        >
+        <div class="hint">email válido | max 254 chars</div>
+      </div>
+
+      <div class="buttons">
+        <button type="submit" id="submitBtn">Request alias (subscribe)</button>
+      </div>
+
+      <div id="result" class="result"></div>
+    </form>
+	<br>
+	<br>
+    <p>curl 'https://mail.haltman.io/forward/subscribe?name={alias_handle}&domain={alias_domain}&to={your_mail}'</p>
+  </div>
+
+  <footer>
+    Powered by Haltman.io
+  </footer>
+
+  <script>
+    // ============================
+    // Config
+    // ============================
+    const API_HOST = 'https://mail.haltman.io';
+
+    const DOMAINS = [
+		"abin.lat",
+		"halt.ciphine.com",
+		"thc.extencil.me",
+		"the.hackerschoice.org",
+		"fwd.haltman.io",
+		"1337.meu.bingo"
+    ];
+
+    const RE_NAME = /^[a-z0-9](?:[a-z0-9.]{0,62}[a-z0-9])?$/;
+    const RE_DOMAIN = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
+
+    function $(id) { return document.getElementById(id); }
+
+    // ============================
+    // Populate domains
+    // ============================
+    (function () {
+      const sel = $("domain");
+      DOMAINS.forEach(d => {
+        if (!RE_DOMAIN.test(d)) return;
+        const opt = document.createElement("option");
+        opt.value = d;
+        opt.textContent = d;
+        sel.appendChild(opt);
+      });
+    })();
+
+    // ============================
+    // Submit handler
+    // ============================
+    $("subscribeForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const name = $("name").value.trim().toLowerCase();
+      const domain = $("domain").value.trim().toLowerCase();
+      const to = $("to").value.trim();
+
+      if (!RE_NAME.test(name)) {
+        return show(false, { error: "invalid name" });
+      }
+      if (!RE_DOMAIN.test(domain)) {
+        return show(false, { error: "invalid domain" });
+      }
+
+      const params = new URLSearchParams({ name, domain, to });
+      const url = `${API_HOST}/forward/subscribe?${params.toString()}`;
+
+      $("submitBtn").disabled = true;
+      $("submitBtn").textContent = "Sending…";
+
+      try {
+        const res = await fetch(url, { method: "GET" });
+        const data = await res.json();
+        show(res.ok && data.ok !== false, data);
+      } catch (err) {
+        show(false, { error: "network_error", detail: String(err) });
+      } finally {
+        $("submitBtn").disabled = false;
+        $("submitBtn").textContent = "Request alias (subscribe)";
+      }
+    });
+
+    function show(ok, data) {
+      const el = $("result");
+      el.className = "result " + (ok ? "ok" : "err");
+      el.style.display = "block";
+      el.textContent = JSON.stringify(data, null, 2);
+    }
+  </script>
+</body>
+</html>
